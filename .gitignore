@@ -1,0 +1,23 @@
+# --- Archivos de claves y secretos (IMPORTANTE) ---
+.env
+.env.local
+
+# --- Entornos Virtuales (Pesan mucho, nunca se suben) ---
+.venv/
+venv/
+env/
+
+# --- Basura de Python (Archivos compilados) ---
+__pycache__/
+*.pyc
+
+# --- Basura de Jupyter Notebooks ---
+.ipynb_checkpoints/
+
+# --- Datos (Opcional: si tienes csv gigantes que no caben en github) ---
+# data/
+# *.csv
+
+# --- Archivos del sistema operativo y VS Code ---
+.DS_Store
+.vscode/

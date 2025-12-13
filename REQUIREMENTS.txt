@@ -1,0 +1,12 @@
+pandas
+numpy
+matplotlib
+plotly
+ipywidgets
+holidays
+statsmodels
+scikit-learn
+catboost
+optuna
+ipykernel
+nbformat
