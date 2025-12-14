@@ -1,15 +1,10 @@
 import pandas as pd
 import numpy as np
 
-import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-import ipywidgets as widgets
-from ipywidgets import interact, fixed
 import holidays
 
 
