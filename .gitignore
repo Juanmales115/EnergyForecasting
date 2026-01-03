@@ -10,6 +10,7 @@ env/
 # --- Basura de Python (Archivos compilados) ---
 __pycache__/
 *.pyc
+*.ipynb
 
 # --- Basura de Jupyter Notebooks ---
 .ipynb_checkpoints/
@@ -21,3 +22,6 @@ __pycache__/
 # --- Archivos del sistema operativo y VS Code ---
 .DS_Store
 .vscode/
+
+Results.txt
+catboost_info/
