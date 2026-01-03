@@ -575,3 +575,9 @@ def create_net_load_aproximation(df):
     df['net_load_proxy'] = df['demand_hourly_mean'] / (1 + df['renewable_potential_proxy'])
     return df
 
+def create_direct_targets(series, horizon=24):
+    "f""Creates the multi-output target matrix Y."""
+    targets = {}
+    for h in range(1, horizon + 1):
+        targets[f'y_t+{h}'] = series.shift(-h)
+    return pd.concat(targets, axis=1)

@@ -20,7 +20,7 @@ def get_energy_weather(start_date, end_date):
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
     openmeteo = openmeteo_requests.Client(session=retry_session)
 
-    url = "https://archive-api.open-meteo.com/v1/archive"
+    url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
     params = {
         "latitude": LATITUDE,
         "longitude": LONGITUDE,
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     df_weather = get_energy_weather(START, END)
 
     if not df_weather.empty:
-        save_to_sqlite(df_weather, "weather_data")
+        save_to_sqlite(df_weather, "weather_data", replace=False)
         print("\n -- Open-Meteo data saved --")
     else:
         print("CRITICAL: No weather data retrieved")

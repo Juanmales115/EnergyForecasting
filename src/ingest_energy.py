@@ -29,7 +29,7 @@ DB_PATH = os.path.join(DATA_DIR, "energy_market.db")
 # Ensure 'data' folder exists
 os.makedirs(DATA_DIR, exist_ok=True)
 
-def get_esios_data(start_date, end_date, indicator_id=INDICATOR_ID):
+def get_esios_data(start_date, end_date, indicator_id="600", val_name='value'):
     """
     Generic function to fetch data from ESIOS API.
     Args:
@@ -79,7 +79,7 @@ def get_esios_data(start_date, end_date, indicator_id=INDICATOR_ID):
         df_clean = df[['datetime', 'value']].copy()
         # We rename 'value' to a generic 'value' or specific depending on usage
         # But to keep your pipeline simple, let's return 'value' and rename outside
-        df_clean.columns = ['timestamp', 'value']
+        df_clean.columns = ['timestamp', val_name]
         
         # Timezone Conversion
         df_clean['timestamp'] = pd.to_datetime(df_clean['timestamp'], utc=True)
@@ -93,14 +93,15 @@ def get_esios_data(start_date, end_date, indicator_id=INDICATOR_ID):
         print(f"ERROR: {e}")
         return pd.DataFrame()
 
-def save_to_sqlite(df, table_name):
+def save_to_sqlite(df, table_name, replace=False):
     """Saves dataframe to the DB in /data folder."""
     if df.empty: return
-    
+    if replace: method='replace'
+    else: method='append'
     print(f"Saving to: {DB_PATH}")
     conn = sqlite3.connect(DB_PATH)
     try:
-        df.to_sql(table_name, conn, if_exists='replace', index=False)
+        df.to_sql(table_name, conn, if_exists=method, index=False)
         print(f"Saved {len(df)} rows to table '{table_name}'")
     except Exception as e:
         print(f"SQL Error: {e}")
@@ -114,7 +115,7 @@ if __name__ == "__main__":
     
     print(f"--- Starting ETL Process ({START} to {END}) ---")
 
-    print("\n[1/2] Downloading Energy Prices (ID 10229)...")
+    print("\n[1/2] Downloading Energy Prices...")
     months = pd.date_range(start=START, end=END, freq='MS')
     all_energy_dfs = []
 
@@ -126,7 +127,7 @@ if __name__ == "__main__":
         s_date = month_start.strftime("%Y-%m-%d")
         e_date = month_end.strftime("%Y-%m-%d")
         
-        df_chunk = get_esios_data(s_date, e_date)
+        df_chunk = get_esios_data(s_date, e_date, val_name='price')
         if not df_chunk.empty:
             all_energy_dfs.append(df_chunk)
         
@@ -138,6 +139,8 @@ if __name__ == "__main__":
     if all_energy_dfs:
         df_prices_total = pd.concat(all_energy_dfs, ignore_index=True)
         df_prices_total = df_prices_total.drop_duplicates(subset='timestamp').sort_values('timestamp')
+        df_prices_total['timestamp'] = pd.to_datetime(df_prices_total['timestamp'], utc=True).dt.tz_convert("Europe/Madrid")
+        df_prices_total = df_prices_total.resample('h', on='timestamp')['price'].mean()
         save_to_sqlite(df_prices_total, "energy_prices")
     else:
         print("CRITICAL: No energy data retrieved.")
