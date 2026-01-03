@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from src.ingest_energy import get_esios_data, DB_PATH, TIMEZONE
 from src.ingest_OPENMETO import get_energy_weather
-from src.Models import Create_Custom_Features
+from src.Transformers import Create_Custom_Features
 
 def build_forecasting_pipeline(cols_m1, cat_cols):
     from sklearn.pipeline import Pipeline
@@ -20,50 +20,63 @@ def build_forecasting_pipeline(cols_m1, cat_cols):
 
 def get_local_data_or_fetch(table_name, start_date, end_date, indicator_id):
     conn = sqlite3.connect(DB_PATH)
-    target_start_dt = pd.to_datetime(start_date, utc=True).tz_convert(TIMEZONE)
-    target_end_dt = pd.to_datetime(end_date, utc=True).tz_convert(TIMEZONE)
+    
+    # 1. Normalización total
+    target_start_dt = pd.to_datetime(start_date, utc=True).floor('h').tz_convert(TIMEZONE)
+    target_end_dt = pd.to_datetime(end_date, utc=True).floor('h').tz_convert(TIMEZONE)
+
+    sql_start = target_start_dt.strftime('%Y-%m-%d %H:%M:%S')
+    sql_end = target_end_dt.strftime('%Y-%m-%d %H:%M:%S')
 
     try:
-        # 1. Intentar leer todo el rango solicitado de la DB
         query = f"SELECT * FROM {table_name} WHERE timestamp >= ? AND timestamp <= ?"
-        df_local = pd.read_sql(query, conn, params=(start_date, end_date))
+        df_local = pd.read_sql(query, conn, params=(sql_start, sql_end))
+        
         if not df_local.empty:
-            df_local['timestamp'] = pd.to_datetime(df_local['timestamp'], utc=True).tz_convert(TIMEZONE)
+            df_local['timestamp'] = pd.to_datetime(df_local['timestamp'], utc=True).dt.floor('h').dt.tz_convert(TIMEZONE)
+            df_local = df_local.drop_duplicates(subset='timestamp')
     except Exception:
         df_local = pd.DataFrame()
     finally:
         conn.close()
 
-    # 2. Verificar si necesitamos pedir datos
+    # LOG DE ESTADO
     if not df_local.empty:
         max_local = df_local['timestamp'].max()
-        # Comparamos timestamps completos, no solo .date()
+        print(f"[*] DB {table_name}: encontrada historia hasta {max_local.strftime('%H:%M')}")
+        
         if max_local >= target_end_dt:
+            print(f"[OK] {table_name} al día. No se requiere descarga.")
             return df_local.sort_values('timestamp')
         
-        # El nuevo inicio es el máximo que tenemos + 1 unidad de frecuencia
-        fetch_start = (max_local + pd.Timedelta(hours=1))
+        fetch_start = max_local + pd.Timedelta(hours=1)
     else:
+        print(f"[!] {table_name} no encontrada en DB para este rango.")
         fetch_start = target_start_dt
 
-    # 3. Fetch de lo que falta (Delta o Todo)
-    print(f"Fetching for {table_name}: {fetch_start.isoformat()} to {target_end_dt.isoformat()}")
+    if fetch_start >= target_end_dt:
+        return df_local.sort_values('timestamp')
+
+    # 3. Descarga
+    print(f"[API] Descargando {table_name} desde {fetch_start.strftime('%H:%M')}...")
     df_new = get_esios_data(fetch_start.isoformat(), target_end_dt.isoformat(), indicator_id=indicator_id)
 
     if not df_new.empty:
-        # Estandarización de columnas
-        if table_name == "energy_demand":
-            df_new = df_new.rename(columns={'value': 'demand_value'})
+        df_new['timestamp'] = pd.to_datetime(df_new['timestamp'], utc=True).dt.floor('h')
         
-        # Persistencia
+        name_map = {'energy_demand': 'demand_value', 'energy_prices': 'price'}
+        df_new = df_new.rename(columns={'value': name_map.get(table_name, 'value')})
+        
         conn = sqlite3.connect(DB_PATH)
-        df_new.to_sql(table_name, conn, if_exists='append', index=False)
-        conn.close()
-        print(f"Persisted {len(df_new)} new rows to {table_name}")
+        try:
+            df_to_save = df_new.copy()
+            df_to_save['timestamp'] = df_to_save['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            df_to_save.to_sql(table_name, conn, if_exists='append', index=False)
+        finally:
+            conn.close()
 
-        # Unir y limpiar
-        df_final = pd.concat([df_local, df_new]).drop_duplicates(subset='timestamp')
-        return df_final.sort_values('timestamp')
+        df_new['timestamp'] = df_new['timestamp'].dt.tz_localize('UTC').dt.tz_convert(TIMEZONE)
+        return pd.concat([df_local, df_new]).drop_duplicates(subset='timestamp').sort_values('timestamp')
 
     return df_local
 
@@ -100,23 +113,29 @@ def run_production_forecast(model_path='model_v1.joblib'):
 
     # 4. Inference
     model = joblib.load(model_path)
-    # The model handles lag creation via Create_Custom_Features
-    predictions = model.predict(data)
-    
-    # We take the latest prediction row (which represents the 24h forecast from 'today')
-    latest_forecast = predictions.tail(1).copy()
-    latest_forecast['execution_date'] = today
-    latest_forecast['execution_timestamp'] = execution_time
+    preds = model.predict(data) # Returns shape (1, 24)
+    raw_preds = preds[-1:]
 
-    # 5. Save Forecast to SQLite (New Table)
+    # Transform (1, 24) into a 24-row DataFrame
+    forecast_steps = []
+    for h in range(preds.shape[1]):
+        forecast_steps.append({
+            'execution_timestamp': execution_time,
+            'forecast_timestamp': today + pd.Timedelta(hours=h + 1),
+            'predicted_price': float(preds.iloc[-1, h]) # .iloc es la clave aquí
+        })
+    
+    forecast_df = pd.DataFrame(forecast_steps)
+
+    # Save
     conn = sqlite3.connect(DB_PATH)
-    latest_forecast.to_sql("Forecasting_prices", conn, if_exists='append', index=False)
+    forecast_df.to_sql("Forecasting_prices", conn, if_exists='append', index=False)
     conn.close()
     
-    print(f"Forecast for {today.date()} successfully saved to 'Forecasting_prices'.")
-    return latest_forecast
+    print(f"Forecast for {today.date()} (24h) saved.")
+    return forecast_df
 
-def should_retrain(model_path):
+def should_retrain(model_path='model_v1.joblib'):
     """
     Checks if the model file is older than 7 days (Weekly retraining).
     """
@@ -130,41 +149,49 @@ def get_full_training_data():
     """
     Loads all available history from SQLite for retraining.
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect("data/energy_market.db")
     query = """
     SELECT * FROM weather_data 
     INNER JOIN energy_prices USING(timestamp)
-    INNER JOIN energy_demand USING(timestamp)
     ORDER BY timestamp ASC;
     """
     data = pd.read_sql(query, conn)
-    conn.close()
-    
-    # Pre-process for the pipeline
-    data['timestamp'] = pd.to_datetime(data['timestamp'], utc=True).dt.tz_convert(TIMEZONE)
-    data = data.rename(columns={'value': 'price'})
-    # Note: Ensure demand features match the Transformer expectations
+    data['timestamp'] = pd.to_datetime(data['timestamp'], utc=True).dt.tz_convert("Europe/Madrid")
+
+    demand_data = pd.read_sql("SELECT * FROM energy_demand", conn)
+    demand_data.columns = ['timestamp', 'demand_value'] #rename columns for clarity
+    demand_data['timestamp'] = pd.to_datetime(demand_data['timestamp'], utc=True).dt.tz_convert("Europe/Madrid")
+    # Extract hourly features (by default data is in 5 or 10 minute intervals)
+    hourly_features = demand_data.resample('h', on='timestamp')['demand_value'].agg([
+            'min', 
+            'max', 
+            'mean', 
+            'std', 
+        ]).reset_index()
+    daily_features = hourly_features.add_prefix('demand_hourly_')
+
+    # Merge data to main dataframe
+    data = data.merge(daily_features, left_on='timestamp', right_on='demand_hourly_timestamp', how='left').drop('demand_hourly_timestamp', axis=1)
+        
     return data
 
 
 def retrain_model(model_path='model_v1.joblib'):
     # 1. Cargar datos brutos
     data = get_full_training_data()
-    X_raw = data.drop(columns=['price'])
+    X_raw = data.copy()
     y_raw = data[['price']] # StackedDirect espera un DataFrame/Series para y
 
     # 2. DRY RUN: Generar las columnas para poder seleccionarlas
     # Instanciamos solo el transformador para "ver" qué columnas crea
     featurizer = Create_Custom_Features(time_col='timestamp')
-    X_sample = featurizer.fit_transform(X_raw.iloc[:10]) # Solo 10 filas para ir rápido
+    X_sample = featurizer.fit_transform(X_raw.tail(1000)) # Solo 1000 filas para ir rápido
     
     # 3. DEFINICIÓN DE COLUMNAS (Aquí van tus líneas)
     # Buscamos las columnas deterministas (const, trend, fourier...)
     deterministic_cols = [c for c in X_sample.columns if c in ['const', 'trend'] or 's(' in c or 'fourier' in c]
     
-    # Buscamos los lags de precio y demanda para el Modelo 1 (Ridge)
-    price_demand_lags = [c for c in X_sample.columns if 'price_lag' in c or 'demand_hourly' in c]
-    cols_m1 = deterministic_cols + price_demand_lags
+    cols_m1 = deterministic_cols
     
     cat_cols = X_sample.select_dtypes(include=['object', 'category']).columns
 
@@ -173,4 +200,9 @@ def retrain_model(model_path='model_v1.joblib'):
 
     # 5. Entrenar y guardar
     pipeline.fit(X_raw, y_raw)
+    model_dir = os.path.dirname(model_path)
+    if model_dir: # Si hay una ruta de carpeta
+        os.makedirs(model_dir, exist_ok=True)
+        
     joblib.dump(pipeline, model_path)
+    print(f"Model successfully saved to {model_path}")

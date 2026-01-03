@@ -7,7 +7,7 @@ import os
 import time
 from retry_requests import retry
 from dotenv import load_dotenv
-from ingest_energy import save_to_sqlite, TIMEZONE
+from src.ingest_energy import save_to_sqlite, TIMEZONE, DB_PATH
 
 load_dotenv()
 # Location: Granada
@@ -52,21 +52,55 @@ def get_energy_weather(start_date, end_date):
     hourly_data['rain'] = hourly.Variables(4).ValuesAsNumpy()
 
     df = pd.DataFrame(data=hourly_data)
-    df['timestamp'] = df['timestamp'].dt.tz_convert(TIMEZONE)
+    # 1. Normalización crítica: Redondear a la hora para que coincida con ESIOS
+    df['timestamp'] = df['timestamp'].dt.tz_convert(TIMEZONE).dt.floor('h')
     df = df.sort_values('timestamp').reset_index(drop=True)
 
     print(f"Success: {len(df)} weather rows.")
     return df
 
 
+def save_weather_safe(df, table_name="weather_data"):
+    """Borra el rango de fechas existente y guarda el nuevo para evitar duplicados."""
+    if df.empty:
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 2. Preparar el rango para SQLite (formato string YYYY-MM-DD HH:MM:SS)
+    start_range = df['timestamp'].min().strftime('%Y-%m-%d %H:%M:%S')
+    end_range = df['timestamp'].max().strftime('%Y-%m-%d %H:%M:%S')
+
+    try:
+        # 3. Borrar solo lo que vamos a sobreescribir
+        cursor.execute(
+            f"DELETE FROM {table_name} WHERE timestamp >= ? AND timestamp <= ?",
+            (start_range, end_range)
+        )
+        
+        # 4. Guardar los nuevos datos (convertidos a string para SQLite)
+        df_to_save = df.copy()
+        df_to_save['timestamp'] = df_to_save['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        df_to_save.to_sql(table_name, conn, if_exists='append', index=False)
+        
+        conn.commit()
+        print(f"[*] {table_name}: Rango {start_range} a {end_range} actualizado.")
+    except Exception as e:
+        conn.rollback()
+        print(f"[!] Error guardando clima: {e}")
+    finally:
+        conn.close()
+
 if __name__ == "__main__":
+    load_dotenv()
     START = os.getenv("START_DATE")
     END = os.getenv("END_DATE")
-    print("\nDownloading Weather Data...")
+    
     df_weather = get_energy_weather(START, END)
 
     if not df_weather.empty:
-        save_to_sqlite(df_weather, "weather_data", replace=False)
-        print("\n -- Open-Meteo data saved --")
+        # Usamos la nueva función segura
+        save_weather_safe(df_weather)
     else:
         print("CRITICAL: No weather data retrieved")

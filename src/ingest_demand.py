@@ -4,7 +4,7 @@ import pandas as pd
 import os
 import time
 from dotenv import load_dotenv
-from ingest_energy import save_to_sqlite, get_esios_data
+from src.ingest_energy import save_to_sqlite, get_esios_data
 
 # 1. Load environment variables
 load_dotenv()

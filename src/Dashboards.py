@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import sqlite3
-from utils import *
+from src.utils import *
 import os
 
 
