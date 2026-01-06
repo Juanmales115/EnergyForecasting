@@ -23,5 +23,8 @@ __pycache__/
 .DS_Store
 .vscode/
 
+# Results (Already in README)
 Results.txt
+
+# Logs de entrenamiento de CatBoost
 catboost_info/

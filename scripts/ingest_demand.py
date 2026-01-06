@@ -4,7 +4,7 @@ import pandas as pd
 import os
 import time
 from dotenv import load_dotenv
-from src.ingest_energy import save_to_sqlite, get_esios_data
+from ingest_energy import save_to_sqlite, get_esios_data
 
 # 1. Load environment variables
 load_dotenv()
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         df_demand_total = pd.concat(all_energy_dfs, ignore_index=True)
         df_demand_total = df_demand_total.drop_duplicates(subset='timestamp').sort_values('timestamp')
         df_demand_total.columns = ['timestamp', 'demand_value']
-        save_to_sqlite(df_demand_total, "energy_demand")
+        save_to_sqlite(df_demand_total, "energy_demand", replace=True)
     else:
         print("CRITICAL: No energy data retrieved.")
     

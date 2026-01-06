@@ -140,8 +140,8 @@ if __name__ == "__main__":
         df_prices_total = pd.concat(all_energy_dfs, ignore_index=True)
         df_prices_total = df_prices_total.drop_duplicates(subset='timestamp').sort_values('timestamp')
         df_prices_total['timestamp'] = pd.to_datetime(df_prices_total['timestamp'], utc=True).dt.tz_convert("Europe/Madrid")
-        df_prices_total = df_prices_total.resample('h', on='timestamp')['price'].mean()
-        save_to_sqlite(df_prices_total, "energy_prices")
+        df_prices_total = df_prices_total.resample('h', on='timestamp')['price'].mean().reset_index()
+        save_to_sqlite(df_prices_total, "energy_prices", replace=True)
     else:
         print("CRITICAL: No energy data retrieved.")
     
