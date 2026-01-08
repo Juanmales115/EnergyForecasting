@@ -8,6 +8,8 @@ from datetime import datetime
 from scripts.ingest_energy import get_esios_data, DB_PATH, TIMEZONE
 from scripts.ingest_OPENMETEO import get_energy_weather
 from scripts.Transformers import Create_Custom_Features
+import plotly.express as px
+from pathlib import Path
 
 def build_forecasting_pipeline(cols_m1, cat_cols):
     from sklearn.pipeline import Pipeline
@@ -226,3 +228,51 @@ def retrain_model(model_path='model_v1.joblib'):
     # 5. Guardar
     joblib.dump(pipeline, model_path)
     print(f"Model successfully saved with 24h horizon support.")
+
+def get_model_importances(model_path='model_v1.joblib'):
+
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"The model file was not found at: {model_path}, consider retraining")
+
+    model = joblib.load(model_path)
+    fi_model = model.named_steps['model'].model_2 # Main model
+    feature_importance = fi_model.get_feature_importance() # Catboost
+
+    try:
+        feature_names = fi_model.feature_names_
+    except AttributeError:
+        data = get_full_training_data()
+        X_dummy = model.named_steps['features'].transform(data.head(1))
+        feature_names = X_dummy.columns
+
+    df_importance = pd.DataFrame({
+        'feature': feature_names,
+        'importance': feature_importance
+     }).sort_values(by='importance', ascending=False)
+
+    return df_importance
+
+def save_importance_plot(folder='Reports/Dashboards', filename='feature_importance.png'):
+    output_path = Path(folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+    df = get_model_importances().head(20)
+    fig = px.bar(
+        df,
+        x='importance',
+        y='feature',
+        orientation='h',
+        title='Feature Importances (Top 20)',
+        labels={'importance': 'Importance Score', 'feature': 'Feature Name'},
+        template='plotly_white',
+        color='importance',
+        color_continuous_scale='Viridis'
+    )
+    
+    # Ajustar el diseño para que los nombres no se corten
+    fig.update_layout(yaxis={'categoryorder': 'total ascending'}, height=800)
+    
+    # 3. Guardar como HTML interactivo
+    full_file_path = output_path / filename
+    fig.write_html(str(full_file_path))
+    
+    print(f"Dashboard saved successfully at: {full_file_path}")
