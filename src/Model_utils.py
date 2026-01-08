@@ -23,7 +23,7 @@ def build_forecasting_pipeline(cols_m1, cat_cols):
 def get_local_data_or_fetch(table_name, start_date, end_date, indicator_id):
     conn = sqlite3.connect(DB_PATH)
     
-    # 1. Normalización total
+    # Date normalization
     target_start_dt = pd.to_datetime(start_date, utc=True).floor('h').tz_convert(TIMEZONE)
     target_end_dt = pd.to_datetime(end_date, utc=True).floor('h').tz_convert(TIMEZONE)
 
@@ -59,32 +59,28 @@ def get_local_data_or_fetch(table_name, start_date, end_date, indicator_id):
     if fetch_start >= target_end_dt:
         return df_local.sort_values('timestamp')
 
-    # 3. Descarga
+    # Data download
     print(f"[API] Fetching {table_name} from {fetch_start.strftime('%H:%M')}...")
     df_new = get_esios_data(fetch_start.isoformat(), target_end_dt.isoformat(), indicator_id=indicator_id)
 
     if not df_new.empty:
-        # Normalizar a la hora
         df_new['timestamp'] = pd.to_datetime(df_new['timestamp'], utc=True).dt.floor('h')
         
-        # Mapeo de nombres de columna
+        # Name mapping
         val_col = 'price' if table_name == 'energy_prices' else 'demand_value'
         df_new = df_new.rename(columns={'value': val_col})
         
-        # --- LÓGICA DE RESAMPLE HORARIO (Promedio regional/intradía) ---
-        # Usamos groupby + mean + reset_index para no perder la columna 'timestamp'
+        # With this logic timestamp column is preserved, as it will be needed.
         df_new = df_new.groupby('timestamp')[val_col].mean().reset_index()
         
         conn = sqlite3.connect(DB_PATH)
         try:
             df_to_save = df_new.copy()
-            # Guardar como string para SQLite manteniendo la zona horaria (con offset)
             df_to_save['timestamp'] = df_to_save['timestamp'].dt.tz_convert(TIMEZONE).astype(str)
             df_to_save.to_sql(table_name, conn, if_exists='append', index=False)
         finally:
             conn.close()
 
-        # Convertir a zona horaria local para el pipeline
         df_new['timestamp'] = df_new['timestamp'].dt.tz_convert(TIMEZONE)
         return pd.concat([df_local, df_new]).drop_duplicates(subset='timestamp').sort_values('timestamp')
 
@@ -94,7 +90,7 @@ def run_production_forecast(model_path='model_v1.joblib'):
     """
     Production entry point: Fetches data, predicts next 24h, and saves results.
     """
-    # 1. Setup execution metadata
+    # Setup execution metadata
     today = pd.Timestamp.now(tz=TIMEZONE).normalize()
     execution_time = pd.Timestamp.now(tz=TIMEZONE)
     
@@ -103,14 +99,14 @@ def run_production_forecast(model_path='model_v1.joblib'):
     target_date = today.isoformat()
     forecast_end = (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # 2. Efficient Data Ingestion
+    # Data Ingestion
     df_prices = get_local_data_or_fetch(table_name="energy_prices", start_date=start_history, end_date=target_date, indicator_id="600")
     df_demand = get_local_data_or_fetch(table_name="energy_demand", start_date=start_history, end_date=target_date, indicator_id="1293")
     
     # Weather is always fetched as it contains future forecast data
     df_weather = get_energy_weather(start_history, forecast_end)
 
-    # 3. Preprocessing & Merging
+    # Preprocessing & Merging
     # Price column in DB is 'value', but Transformer expects 'price'
     df_prices = df_prices.rename(columns={'value': 'price'})
     
@@ -121,7 +117,7 @@ def run_production_forecast(model_path='model_v1.joblib'):
     data = df_weather.merge(df_prices, on='timestamp', how='left')
     data = data.merge(df_demand_h, on='timestamp', how='left')
 
-    # 4. Inference
+    # Inference
     model = joblib.load(model_path)
     preds = model.predict(data) # Returns shape (1, 24)
 
@@ -193,39 +189,34 @@ def get_full_training_data():
     return data
 
 def retrain_model(model_path='model_v1.joblib'):
-    # 1. Cargar datos brutos
+    # Load all data for training
     data = get_full_training_data()
     
-    # --- PASO CLAVE: Crear las 24 columnas objetivo ---
+    # Create target column
     horizon = 24
     y_list = []
     for h in range(1, horizon + 1):
-        # Desplazamos el precio hacia atrás para traer el futuro al presente
         y_list.append(data['price'].shift(-h).rename(f'price_h{h}'))
     
     y_raw = pd.concat(y_list, axis=1)
     
-    # 2. Alinear X con la nueva y (eliminar filas sin futuro)
+    # Input preparation
     X_raw = data.copy()
-    
-    # Eliminamos las últimas 24 filas porque no tienen "futuro" para entrenar
     X_raw = X_raw.iloc[:-horizon]
     y_raw = y_raw.iloc[:-horizon]
     
-    # 3. DRY RUN y Definición de columnas
+    # 3. DRY RUN and column definition
     featurizer = Create_Custom_Features(time_col='timestamp')
-    X_sample = featurizer.fit_transform(X_raw.tail(1000))
+    X_sample = featurizer.fit_transform(X_raw.tail(1000)) # Needed to get features names
     
     deterministic_cols = [c for c in X_sample.columns if c in ['const', 'trend'] or 's(' in c or 'fourier' in c]
     cat_cols = X_sample.select_dtypes(include=['object', 'category']).columns
 
-    # 4. Construir y Entrenar
+    # Build and train the pipeline
     pipeline = build_forecasting_pipeline(cols_m1=deterministic_cols, cat_cols=cat_cols)
-    
-    # Ahora y_raw tiene 24 columnas, el modelo aprenderá el horizonte completo
     pipeline.fit(X_raw, y_raw)
     
-    # 5. Guardar
+    # Save model
     joblib.dump(pipeline, model_path)
     print(f"Model successfully saved with 24h horizon support.")
 
@@ -267,11 +258,9 @@ def save_importance_plot(folder='Reports/Dashboards', filename='feature_importan
         color='importance',
         color_continuous_scale='Viridis'
     )
-    
-    # Ajustar el diseño para que los nombres no se corten
+
     fig.update_layout(yaxis={'categoryorder': 'total ascending'}, height=800)
     
-    # 3. Guardar como HTML interactivo
     full_file_path = output_path / filename
     fig.write_html(str(full_file_path))
     

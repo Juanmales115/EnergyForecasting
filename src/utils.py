@@ -162,7 +162,7 @@ def plot_correlation(df, variable_x):
         trendline="ols", # Tendency line
         color="price", 
         color_continuous_scale="Plasma",
-        height=600 # Altura fija para que no 'baile' al cambiar
+        height=600
     )
 
     fig.update_layout(
@@ -409,9 +409,23 @@ def create_date_features(df):
     covid_start = "2020-03-14" #Also lockdown start
     lockdown_finish = "2020-06-21"
     covid_end = "2021-05-09"
+    # 2022 Market crisis
+    crisis_start = "2021-09-01"
+    stabilization_start = "2023-04-01"
+    # War strongly affected market
+    war_start = "2022-02-24"
+    war_shock_end = "2022-06-14"
+
+    iberian_exception_start = "2022-06-15"
+    iberian_exception_end = "2023-12-31"
+
     data['is_covid'] = data['timestamp'].between(covid_start, covid_end, inclusive='both').astype(int)
     # This is not needed as there is no data in this range, but to be consistent:
     data['is_covid_lockdown'] = data['timestamp'].between(covid_start, lockdown_finish, inclusive='both').astype(int)
+
+    data['market_crisis_2022'] = data['timestamp'].between(crisis_start, stabilization_start, inclusive='both').astype(int)
+    data['war_shock'] = data['timestamp'].between(war_start, war_shock_end, inclusive='both').astype(int)
+    data['iberian_exception'] = data['timestamp'].between(iberian_exception_start, iberian_exception_end, inclusive='both').astype(int)
     return data
 
 def add_national_holidays(df, country_code='ES'):
