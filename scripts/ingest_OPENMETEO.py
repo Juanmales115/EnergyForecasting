@@ -53,7 +53,7 @@ def get_energy_weather(start_date, end_date):
 
     df = pd.DataFrame(data=hourly_data)
     # 1. Normalización crítica: Redondear a la hora para que coincida con ESIOS
-    df['timestamp'] = df['timestamp'].dt.tz_convert(TIMEZONE).dt.floor('h')
+    df['timestamp'] = df['timestamp'].dt.floor('h').dt.tz_convert(TIMEZONE)
     df = df.sort_values('timestamp').reset_index(drop=True)
 
     print(f"Success: {len(df)} weather rows.")
@@ -73,19 +73,31 @@ def save_weather_safe(df, table_name="weather_data"):
     end_range = df['timestamp'].max().strftime('%Y-%m-%d %H:%M:%S')
 
     try:
-        # 3. Borrar solo lo que vamos a sobreescribir
+        # 3. Prepare the data to save and drop rows where all weather variables are null
+        df_to_save = df.copy()
+        weather_cols = [c for c in ['temperature_2m', 'wind_speed_100m', 'solar_radiation', 'cloud_cover', 'rain'] if c in df_to_save.columns]
+        before = len(df_to_save)
+        if weather_cols:
+            df_to_save = df_to_save.dropna(subset=weather_cols, how='all')
+        dropped = before - len(df_to_save)
+        if dropped:
+            print(f"[!] Dropped {dropped} rows with all-NaN weather variables before saving.")
+        if df_to_save.empty:
+            print(f"[!] No valid weather rows to save for range {start_range} -> {end_range}. Aborting update to DB.")
+            return
+
+        # 4. Borrar solo lo que vamos a sobreescribir (only now that we have valid rows)
         cursor.execute(
             f"DELETE FROM {table_name} WHERE timestamp >= ? AND timestamp <= ?",
             (start_range, end_range)
         )
-        
-        # 4. Guardar los nuevos datos (convertidos a string para SQLite)
-        df_to_save = df.copy()
-        df_to_save['timestamp'] = df_to_save['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Keep timezone info and convert to string with offset so it matches other tables
+        df_to_save['timestamp'] = df_to_save['timestamp'].astype(str)
         df_to_save.to_sql(table_name, conn, if_exists='append', index=False)
         
         conn.commit()
-        print(f"[*] {table_name}: Rango {start_range} a {end_range} actualizado.")
+        print(f"[*] {table_name}: Range {start_range} to {end_range} updated. Saved {len(df_to_save)} rows.")
     except Exception as e:
         conn.rollback()
         print(f"[!] Error guardando clima: {e}")

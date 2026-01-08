@@ -78,8 +78,8 @@ def get_local_data_or_fetch(table_name, start_date, end_date, indicator_id):
         conn = sqlite3.connect(DB_PATH)
         try:
             df_to_save = df_new.copy()
-            # Guardar como string para SQLite manteniendo la columna
-            df_to_save['timestamp'] = df_to_save['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            # Guardar como string para SQLite manteniendo la zona horaria (con offset)
+            df_to_save['timestamp'] = df_to_save['timestamp'].dt.tz_convert(TIMEZONE).astype(str)
             df_to_save.to_sql(table_name, conn, if_exists='append', index=False)
         finally:
             conn.close()
@@ -252,7 +252,7 @@ def get_model_importances(model_path='model_v1.joblib'):
 
     return df_importance
 
-def save_importance_plot(folder='Reports/Dashboards', filename='feature_importance.png'):
+def save_importance_plot(folder='Reports/Dashboards', filename='feature_importance.html'):
     output_path = Path(folder)
     output_path.mkdir(parents=True, exist_ok=True)
     df = get_model_importances().head(20)

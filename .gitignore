@@ -18,6 +18,7 @@ __pycache__/
 # --- Datos (Opcional: si tienes csv gigantes que no caben en github) ---
 # data/
 # *.csv
+*.bak
 
 # --- Archivos del sistema operativo y VS Code ---
 .DS_Store
