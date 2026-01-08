@@ -52,7 +52,7 @@ def get_energy_weather(start_date, end_date):
     hourly_data['rain'] = hourly.Variables(4).ValuesAsNumpy()
 
     df = pd.DataFrame(data=hourly_data)
-    # 1. Normalización crítica: Redondear a la hora para que coincida con ESIOS
+    # Round hours to match ESIOS Data
     df['timestamp'] = df['timestamp'].dt.floor('h').dt.tz_convert(TIMEZONE)
     df = df.sort_values('timestamp').reset_index(drop=True)
 
@@ -68,12 +68,12 @@ def save_weather_safe(df, table_name="weather_data"):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 2. Preparar el rango para SQLite (formato string YYYY-MM-DD HH:MM:SS)
+    # Date range for SQLitle (string YYYY-MM-DD HH:MM:SS)
     start_range = df['timestamp'].min().strftime('%Y-%m-%d %H:%M:%S')
     end_range = df['timestamp'].max().strftime('%Y-%m-%d %H:%M:%S')
 
     try:
-        # 3. Prepare the data to save and drop rows where all weather variables are null
+        # Prepare the data to save and drop rows where all weather variables are null
         df_to_save = df.copy()
         weather_cols = [c for c in ['temperature_2m', 'wind_speed_100m', 'solar_radiation', 'cloud_cover', 'rain'] if c in df_to_save.columns]
         before = len(df_to_save)
@@ -86,7 +86,7 @@ def save_weather_safe(df, table_name="weather_data"):
             print(f"[!] No valid weather rows to save for range {start_range} -> {end_range}. Aborting update to DB.")
             return
 
-        # 4. Borrar solo lo que vamos a sobreescribir (only now that we have valid rows)
+        # Erase only what will be overwritten
         cursor.execute(
             f"DELETE FROM {table_name} WHERE timestamp >= ? AND timestamp <= ?",
             (start_range, end_range)
@@ -112,7 +112,6 @@ if __name__ == "__main__":
     df_weather = get_energy_weather(START, END)
 
     if not df_weather.empty:
-        # Usamos la nueva función segura
         save_weather_safe(df_weather)
     else:
         print("CRITICAL: No weather data retrieved")

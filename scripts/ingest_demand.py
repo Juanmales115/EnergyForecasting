@@ -6,14 +6,11 @@ import time
 from dotenv import load_dotenv
 from ingest_energy import save_to_sqlite, get_esios_data
 
-# 1. Load environment variables
 load_dotenv()
 
 # --- CONFIGURATION ---
-# Now purely driven by .env for flexibility
 INDICATOR_ID = "1293"  # Electricity Demand Indicator
-GEO_ID = os.getenv("GEO_ID")              # "8741"
-print(f"Using GEO_ID: {GEO_ID}")
+GEO_ID = os.getenv("GEO_ID")              # "8741" for peninsula
 TIMEZONE = os.getenv("TIMEZONE")          # "Europe/Madrid"
 
 # --- PATH MANAGEMENT ---
@@ -24,8 +21,7 @@ DB_PATH = os.path.join(DATA_DIR, "energy_market.db")
 # Ensure 'data' folder exists
 os.makedirs(DATA_DIR, exist_ok=True)
 
-
-
+# Historical data retrieval
 if __name__ == "__main__":
     # --- ETL EXECUTION ---
     START = os.getenv("START_DATE")

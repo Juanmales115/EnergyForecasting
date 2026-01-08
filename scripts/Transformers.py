@@ -27,7 +27,7 @@ class Create_Custom_Features(BaseEstimator, TransformerMixin):
         self.weather_horizon = 1 # Known (forecast weather)
         self.price_horizon = 1 # No need to horizon as we will do it in the definition of y (price.shift(-h) | h = 1 -> 24)
 
-        self.fourier = CalendarFourier(freq="D", order=3) # Estacionalidad diaria
+        self.fourier = CalendarFourier(freq="D", order=3) # Daily seasonality
         self.dp = None
 
         self.weather_cols = ['temperature_2m', 'wind_speed_100m', 'solar_radiation']
@@ -38,18 +38,14 @@ class Create_Custom_Features(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
         X_t = X.copy()
         
-        # 1. REDONDEAR PRIMERO EN UTC (Crucial para evitar AmbiguousTimeError)
-        # UTC no tiene cambios de hora, por lo que el redondeo es seguro.
+        # Round and convert
         X_t[self.time_col] = pd.to_datetime(X_t[self.time_col], utc=True).dt.floor('h')
-        
-        # 2. Ahora convertimos a la zona horaria local
         X_t[self.time_col] = X_t[self.time_col].dt.tz_convert(self.timezone)
         
-        # 3. Eliminar duplicados generados por el redondeo
+        # Drop duplicated
         X_t = X_t.sort_values(self.time_col).drop_duplicates(subset=self.time_col)
         
-        # 4. Crear el rango sintético para statsmodels (NAIVE)
-        # Usamos el mínimo y máximo ya redondeados
+        # Range for statsmodels (NAIVE)
         start_naive = X_t[self.time_col].min().tz_localize(None)
         end_naive = X_t[self.time_col].max().tz_localize(None)
         
@@ -64,7 +60,7 @@ class Create_Custom_Features(BaseEstimator, TransformerMixin):
             drop=True
         )
         
-        # Guardamos la última fecha como aware para las máscaras
+        # Needed for future masks
         self.last_train_date_ = X_t[self.time_col].max()
 
         self.is_fitted_ = True
@@ -74,7 +70,7 @@ class Create_Custom_Features(BaseEstimator, TransformerMixin):
     def get_dynamic_features(self, X_t):
         last_train_date = self.last_train_date_
         
-        # Máscaras usando objetos aware (ambos tienen zona horaria)
+        # Masks to separate past and future
         is_past = X_t[self.time_col] <= last_train_date
         is_future = X_t[self.time_col] > last_train_date
         
@@ -84,12 +80,11 @@ class Create_Custom_Features(BaseEstimator, TransformerMixin):
             past_data = X_t.loc[is_past, [self.time_col]]
             in_sample_full = self.dp.in_sample()
             
-            # OJO AQUÍ: Para buscar en in_sample_full (que es naive), 
-            # convertimos las fechas de búsqueda a naive temporalmente
+            # Temporaly convert to naive dates
             search_keys = past_data[self.time_col].dt.tz_localize(None)
             is_features = in_sample_full.loc[search_keys]
             
-            # Restauramos el índice original de X_t
+            # Original Index
             is_features.index = past_data.index
             features_parts.append(is_features)
 
@@ -98,7 +93,7 @@ class Create_Custom_Features(BaseEstimator, TransformerMixin):
             steps = len(future_data)
             oos_features = self.dp.out_of_sample(steps=steps)
             
-            # Restauramos el índice original de X_t
+            # Original Index
             oos_features.index = future_data.index
             features_parts.append(oos_features)
 
@@ -112,7 +107,7 @@ class Create_Custom_Features(BaseEstimator, TransformerMixin):
 
         # Deterministic process
         dp_features = self.get_dynamic_features(X_t)
-        dp_features.index = X_t.index # Alineamos índices
+        dp_features.index = X_t.index # Align indexes
 
         # Add features.
         X_t = create_date_features(X_t)

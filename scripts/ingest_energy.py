@@ -7,21 +7,15 @@ import time
 from retry_requests import retry
 from dotenv import load_dotenv
 
-# 1. Load environment variables
+# Load environment variables
 load_dotenv()
 
 # --- CONFIGURATION ---
 INDICATOR_ID = "600"  # Electricity Market Price Indicator
-GEO_ID = "8741"         # Peninsula
-TIMEZONE = "Europe/Madrid"
-
-# Location: Granada
-LATITUDE = float(os.getenv("LATITUDE"))
-LONGITUDE = float(os.getenv("LONGITUDE"))
+GEO_ID = os.getenv("GEO_ID")              # "8741" for peninsula
+TIMEZONE = os.getenv("TIMEZONE")          # "Europe/Madrid"
 
 # --- PATH MANAGEMENT ---
-# Robust way to find the 'data' folder relative to this script
-# If script is in /Project/src/etl.py, we want /Project/data/energy_market.db
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "energy_market.db")
