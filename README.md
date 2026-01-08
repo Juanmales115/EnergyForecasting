@@ -10,16 +10,18 @@ The core architecture uses a **Stacked Direct 24-hour forecasting** approach:
 ## Model Performance (Metrics)
 The model was evaluated using **Time Series Cross-Validation** (5 folds). 
 
-| Fold | RMSE | MAE |
-| :--- | :--- | :--- |
-| Fold 1 | 52.21 | 41.18 |
-| Fold 2 | 39.34 | 32.19 |
-| Fold 3 | 29.78 | 20.52 |
-| Fold 4 | 33.37 | 24.94 |
-| Fold 5 | 26.29 | 20.51 |
-| **Average** | **36.20** | **27.87** |
+Results across folds:
+Fold 1 | RMSE: 106.0976 | MAE: 70.6199
+Fold 2 | RMSE: 65.6378 | MAE: 50.8361
+Fold 3 | RMSE: 37.5519 | MAE: 28.2797
+Fold 4 | RMSE: 34.2561 | MAE: 24.7475
+Fold 5 | RMSE: 31.1272 | MAE: 23.3014
 
-*Note: Model stability significantly improved in recent folds due to the stabilization of the energy market post-2022 crisis and increased data availability.*
+Average Results:
+RMSE: 54.9341
+MAE: 39.5569
+
+*Note: Model stability significantly improved in recent folds due to the stabilization of the energy market post-2022 crisis and increased data availability. Nevertheless, the error is still excessive, mainly because meteorological data is not enough for preciseful insights*
 
 ## Project Structure
 - `main.py`: Entry point for the production forecasting pipeline.
