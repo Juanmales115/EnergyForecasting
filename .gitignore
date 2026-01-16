@@ -16,8 +16,9 @@ __pycache__/
 .ipynb_checkpoints/
 
 # --- Datos (Opcional: si tienes csv gigantes que no caben en github) ---
-# data/
-# *.csv
+data/*.db
+data/*.csv
+*.sqlite
 *.bak
 
 # --- Archivos del sistema operativo y VS Code ---
@@ -29,3 +30,10 @@ Results.txt
 
 # Logs de entrenamiento de CatBoost
 catboost_info/
+
+# Model
+.joblib
+.pkl
+
+#Reports
+Reports/

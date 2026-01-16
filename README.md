@@ -11,11 +11,11 @@ The core architecture uses a **Stacked Direct 24-hour forecasting** approach:
 The model was evaluated using **Time Series Cross-Validation** (5 folds). 
 
 Results across folds:
-Fold 1 | RMSE: 106.0976 | MAE: 70.6199
-Fold 2 | RMSE: 65.6378 | MAE: 50.8361
-Fold 3 | RMSE: 37.5519 | MAE: 28.2797
-Fold 4 | RMSE: 34.2561 | MAE: 24.7475
-Fold 5 | RMSE: 31.1272 | MAE: 23.3014
+Fold 1 | RMSE: 106.0976 | MAE: 70.6199 
+Fold 2 | RMSE: 65.6378 | MAE: 50.8361 
+Fold 3 | RMSE: 37.5519 | MAE: 28.2797 
+Fold 4 | RMSE: 34.2561 | MAE: 24.7475 
+Fold 5 | RMSE: 31.1272 | MAE: 23.3014 
 
 Average Results:
 RMSE: 54.9341
