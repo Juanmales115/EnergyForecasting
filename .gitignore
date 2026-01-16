@@ -32,8 +32,8 @@ Results.txt
 catboost_info/
 
 # Model
-.joblib
-.pkl
+*.joblib
+*.pkl
 
 #Reports
 Reports/
